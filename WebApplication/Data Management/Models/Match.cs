@@ -1,12 +1,13 @@
-using System;
-using System.ComponentModel.DataAnnotations;
-//Brings in attributes like [Key] for defining primary keys in the model classes.
-
-namespace WebApplication.Models
+namespace WebApplication.DataManagement.Models
 {
+    /// <summary>
+    /// Represents chess game matches with properties for MatchID, creation/end timestamps, 
+    /// player IDs (WhiteUserID, BlackUserID, WinnerID), game state (MatchState, Result, EndReason), 
+    /// match type (Random/Friend/Direct), and an invite code for friend matches. 
+    /// Used for raw SQL operations with MatchesSchema.MatchesTable.
+    /// </summary>
     public class Match
     {
-        [Key]
         public int MatchID { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? EndedAt { get; set; }

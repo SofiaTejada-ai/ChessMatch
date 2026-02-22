@@ -1,12 +1,12 @@
-using System;
-using System.ComponentModel.DataAnnotations;
-//Brings in attributes like [Key] for defining primary keys in the model classes.
-
-namespace WebApplication.Models // Note: actual namespace depends on the project name.
+namespace WebApplication.DataManagement.Models 
 {
+    /// <summary>
+    /// Defines the core user entity with properties like UserID, Username, Email, 
+    /// PasswordHash, CreatedAt, LastSeenAt, and IsActive. Used for raw SQL 
+    /// operations with the UsersSchema.UsersTable in your ChessHub database.
+    /// </summary>
     public class User
     {
-        [Key] 
         public int UserID { get; set; }
         public string Username { get; set; }
         public string Email { get; set; }

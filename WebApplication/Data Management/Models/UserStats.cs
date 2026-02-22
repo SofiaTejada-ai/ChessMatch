@@ -1,12 +1,12 @@
-using System;
-using System.ComponentModel.DataAnnotations;
-//Brings in attributes like [Key] for defining primary keys in the model classes.
-
-namespace WebApplication.Models
+namespace WebApplication.DataManagement.Models
 {
+    /// <summary>
+    /// Contains player statistics including win/loss/draw counts, current and best win streaks, 
+    /// rating, and last game timestamp. Used for raw SQL operations with 
+    /// StatsSchema.UserStatsTable to maintain player performance metrics.
+    /// </summary>
     public class UserStats
     {
-        [Key]
         public int UserID { get; set; }
         public int Wins { get; set; }
         public int Losses { get; set; }
