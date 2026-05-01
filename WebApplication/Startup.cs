@@ -86,11 +86,20 @@ namespace WebApplication
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             // Force CORS headers on every single response - must be first, before auth can intercept
+            // Also disable CDN caching to prevent stale responses without CORS headers
             app.Use(async (context, next) =>
             {
-                context.Response.Headers["Access-Control-Allow-Origin"] = "*";
-                context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH";
-                context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept";
+                context.Response.OnStarting(() =>
+                {
+                    context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+                    context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH";
+                    context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept";
+                    context.Response.Headers["Access-Control-Expose-Headers"] = "*";
+                    context.Response.Headers["Vary"] = "Origin";
+                    context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private";
+                    context.Response.Headers["Pragma"] = "no-cache";
+                    return System.Threading.Tasks.Task.CompletedTask;
+                });
                 if (context.Request.Method == "OPTIONS")
                 {
                     context.Response.StatusCode = 200;
