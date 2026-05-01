@@ -549,8 +549,8 @@ namespace WebApplication
                     return Ok(new { message = "AI analysis unavailable (no API key configured)." });
 
                 var prompt = $"You are ChessHub AI, a chess opponent. The current position (FEN): {fen}. The last move was: {lastMove}. In 1-2 sentences, explain what that move did tactically and hint at what you (as Black) are thinking about next. Be a little competitive about it.";
-                var reply  = await CallGeminiTextAsync(apiKey, prompt);
-                if (reply == null) return Ok(new { message = "AI analysis unavailable right now." });
+                var (reply, askError) = await CallGeminiTextAsync(apiKey, prompt);
+                if (reply == null) return Ok(new { message = $"AI analysis unavailable: {askError}" });
 
                 await _db.CreateChatMessageAsync(matchId, 1, reply);
                 return Ok(new { message = reply });
@@ -597,7 +597,7 @@ namespace WebApplication
                     _      => "You are an intermediate player. Make solid, reasonable moves."
                 };
                 var prompt = $"You are playing chess as Black. {difficultyNote}\nCurrent position (FEN): {fen}\nReply with ONLY your move in UCI format (e.g. e7e5). Nothing else — just the 4-character move string.";
-                var reply  = await CallGeminiTextAsync(apiKey, prompt);
+                var (reply, _) = await CallGeminiTextAsync(apiKey, prompt);
 
                 if (reply != null)
                 {
@@ -628,28 +628,33 @@ namespace WebApplication
                 return null;
             }
 
-            private static async Task<string?> CallGeminiTextAsync(string apiKey, string prompt)
+            private static async Task<(string? text, string? error)> CallGeminiTextAsync(string apiKey, string prompt)
             {
                 try
                 {
-                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-                    var url  = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+                    var url  = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={apiKey}";
                     var body = System.Text.Json.JsonSerializer.Serialize(new
                     {
                         contents = new[] { new { parts = new[] { new { text = prompt } } } }
                     });
                     var resp = await http.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
-                    if (!resp.IsSuccessStatusCode) return null;
-                    var json = await resp.Content.ReadAsStringAsync();
-                    var doc  = System.Text.Json.JsonDocument.Parse(json);
-                    return doc.RootElement
+                    var responseText = await resp.Content.ReadAsStringAsync();
+                    if (!resp.IsSuccessStatusCode)
+                        return (null, $"HTTP {(int)resp.StatusCode}: {responseText.Substring(0, Math.Min(200, responseText.Length))}");
+                    var doc = System.Text.Json.JsonDocument.Parse(responseText);
+                    var text = doc.RootElement
                         .GetProperty("candidates")[0]
                         .GetProperty("content")
                         .GetProperty("parts")[0]
                         .GetProperty("text")
                         .GetString();
+                    return (text, null);
                 }
-                catch { return null; }
+                catch (Exception ex)
+                {
+                    return (null, ex.Message.Substring(0, Math.Min(150, ex.Message.Length)));
+                }
             }
 
             [HttpGet("match/{matchId}/chat")]
@@ -723,14 +728,22 @@ Reply as ChessHub AI. Rules:
 - If they ask for help, give a small hint without giving away the best move
 - Never break character or acknowledge you are a large language model";
 
-                        var aiReply = await CallGeminiTextAsync(apiKey, prompt);
+                                var (aiReply, aiError) = await CallGeminiTextAsync(apiKey, prompt);
                         if (aiReply != null)
                         {
                             var clean = aiReply.Trim();
                             await _db.CreateChatMessageAsync(matchId, 1, clean);
                             return Ok(new { message = "Message sent", aiReply = clean });
                         }
+                        // Store the error as a visible chat message so you can debug from the UI
+                        var debugMsg = $"[AI unavailable: {aiError}]";
+                        await _db.CreateChatMessageAsync(matchId, 1, debugMsg);
+                        return Ok(new { message = "Message sent", aiReply = debugMsg });
                     }
+                    // No API key configured
+                    var noKeyMsg = "[AI unavailable: GEMINI_API_KEY not set in backend service]";
+                    await _db.CreateChatMessageAsync(matchId, 1, noKeyMsg);
+                    return Ok(new { message = "Message sent", aiReply = noKeyMsg });
                 }
 
                 return Ok(new { message = "Message sent" });
