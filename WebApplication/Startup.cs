@@ -25,7 +25,9 @@ namespace WebApplication
             });
             
             // Add DatabaseHelper with connection string
-            var connectionString = "Server=(localdb)\\ProjectModels;Database=ChessHub;Trusted_Connection=true;";
+            // Use DATABASE_URL env var on Railway, fall back to LocalDB for local dev
+            var connectionString = System.Environment.GetEnvironmentVariable("DATABASE_URL") 
+                ?? "Server=(localdb)\\ProjectModels;Database=ChessHub;Trusted_Connection=true;";
             services.AddSingleton(new DatabaseHelper(connectionString));
             
             // Add JWT Authentication
@@ -66,6 +68,13 @@ namespace WebApplication
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
+
+                // Health check at root so Railway knows the app is running
+                endpoints.MapGet("/", async context =>
+                {
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync("{\"status\":\"ok\",\"service\":\"ChessHub API\"}");
+                });
             });
         }
     }
