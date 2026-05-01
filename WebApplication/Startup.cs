@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.Http;
 using WebApplication.DataManagement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System;
@@ -95,14 +95,6 @@ namespace WebApplication
                 app.UseDeveloperExceptionPage();
             }
 
-            // Serve static files from wwwroot (frontend build)
-            var wwwrootPath = Path.Combine(env.ContentRootPath, "wwwroot");
-            if (Directory.Exists(wwwrootPath))
-            {
-                app.UseDefaultFiles();
-                app.UseStaticFiles();
-            }
-
             app.UseRouting();
 
             // Enable CORS before auth
@@ -116,8 +108,11 @@ namespace WebApplication
             {
                 endpoints.MapControllers();
 
-                // Fallback to index.html for SPA routing
-                endpoints.MapFallbackToFile("index.html");
+                // Health check endpoint at root
+                endpoints.MapGet("/", async context =>
+                {
+                    await context.Response.WriteAsync("ChessHub API is running");
+                });
             });
         }
     }
