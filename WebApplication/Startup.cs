@@ -32,9 +32,10 @@ namespace WebApplication
             // Supabase requires SSL — ensure it's set
             if (!connectionString.Contains("SSL Mode") && !connectionString.Contains("sslmode"))
             {
-                var separator = connectionString.Contains("?") ? "&" : 
-                                connectionString.StartsWith("postgresql://") ? "?sslmode=require" : ";SSL Mode=Require;Trust Server Certificate=true";
-                connectionString += separator;
+                if (connectionString.StartsWith("postgresql://") || connectionString.StartsWith("postgres://"))
+                    connectionString += connectionString.Contains("?") ? "&sslmode=require" : "?sslmode=require";
+                else
+                    connectionString += ";SSL Mode=Require;Trust Server Certificate=true";
             }
             
             services.AddSingleton(new DatabaseHelper(connectionString));
