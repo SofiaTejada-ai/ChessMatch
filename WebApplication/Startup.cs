@@ -85,19 +85,6 @@ namespace WebApplication
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            // Maintenance mode: all requests return 503 with a maintenance message
-            app.Use(async (context, next) =>
-            {
-                context.Response.StatusCode = 503;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync("{\"status\":\"maintenance\",\"message\":\"ChessHub is currently under maintenance. Please check back soon!\"}");
-            });
-
-            if (env.IsDevelopment())
-            {
-                app.UseDeveloperExceptionPage();
-            }
-
             app.UseRouting();
 
             // Enable CORS before auth
