@@ -435,5 +435,78 @@ namespace WebApplication.DataManagement
                 }
             }
         }
+
+        public async Task<List<StoredMove>> GetMovesForMatchAsync(int matchId)
+        {
+            var moves = new List<StoredMove>();
+            using (var conn = GetConnection())
+            {
+                await conn.OpenAsync();
+                var sql = @"SELECT move_notation, move_forsyth_edwards_notation, player_user_id
+                            FROM moves WHERE match_id = @matchId
+                            ORDER BY move_time ASC, move_id ASC";
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("matchId", matchId);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        moves.Add(new StoredMove
+                        {
+                            MoveNotation  = reader.GetString(0),
+                            FEN           = reader.GetString(1),
+                            PlayerUserId  = reader.GetInt32(2)
+                        });
+                }
+            }
+            return moves;
+        }
+
+        public async Task CreateMoveAsync(int matchId, int playerUserId, string moveNotation, string moveSAN, string moveFEN)
+        {
+            using (var conn = GetConnection())
+            {
+                await conn.OpenAsync();
+                var sql = @"INSERT INTO moves
+                            (match_id, player_user_id, move_notation,
+                             move_standard_algebraic_notation, move_forsyth_edwards_notation, move_time)
+                            VALUES (@matchId, @player, @notation, @san, @fen, NOW())";
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("matchId",   matchId);
+                    cmd.Parameters.AddWithValue("player",    playerUserId);
+                    cmd.Parameters.AddWithValue("notation",  moveNotation);
+                    cmd.Parameters.AddWithValue("san",       moveSAN);
+                    cmd.Parameters.AddWithValue("fen",       moveFEN);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        public async Task EndMatchAsync(int matchId, string result, string endReason, int? winnerId)
+        {
+            using (var conn = GetConnection())
+            {
+                await conn.OpenAsync();
+                var sql = @"UPDATE matches
+                            SET match_state = 'Finished', result = @result,
+                                end_reason = @endReason, winner_id = @winnerId, ended_at = NOW()
+                            WHERE match_id = @matchId";
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("matchId",   matchId);
+                    cmd.Parameters.AddWithValue("result",    result);
+                    cmd.Parameters.AddWithValue("endReason", endReason);
+                    cmd.Parameters.AddWithValue("winnerId",  (object?)winnerId ?? DBNull.Value);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+        }
+    }
+
+    public class StoredMove
+    {
+        public string MoveNotation { get; set; } = "";
+        public string FEN          { get; set; } = "";
+        public int    PlayerUserId { get; set; }
     }
 }

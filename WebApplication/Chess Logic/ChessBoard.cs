@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
 
 namespace WebApplication.ChessLogic
@@ -10,7 +11,7 @@ namespace WebApplication.ChessLogic
     public class ChessBoard
     {
         public ChessPiece?[,] Squares { get; private set; }
-        public PieceColor CurrentTurn { get; private set; }
+        public PieceColor CurrentTurn { get; set; }
         public List<ChessMove> MoveHistory { get; private set; }
         public bool WhiteKingInCheck { get; private set; }
         public bool BlackKingInCheck { get; private set; }
@@ -158,6 +159,10 @@ namespace WebApplication.ChessLogic
             SetPiece(toRow, toCol, piece);
             SetPiece(fromRow, fromCol, null);
 
+            // Auto-promote pawns to queen
+            if (Squares[toRow, toCol] is Pawn promotablePawn && promotablePawn.CanBePromoted())
+                Squares[toRow, toCol] = new Queen(piece.Color, toRow, toCol);
+
             // Record the move
             var move = new ChessMove
             {
@@ -224,7 +229,7 @@ namespace WebApplication.ChessLogic
         /// <summary>
         /// Updates the check status for both kings
         /// </summary>
-        private void UpdateCheckStatus()
+        public void UpdateCheckStatus()
         {
             WhiteKingInCheck = IsKingInCheck(PieceColor.White);
             BlackKingInCheck = IsKingInCheck(PieceColor.Black);
@@ -291,6 +296,63 @@ namespace WebApplication.ChessLogic
                 gameStatus = GameStatus
             };
             return JsonSerializer.Serialize(boardState);
+        }
+
+        /// <summary>
+        /// Converts current board state to FEN notation for storage.
+        /// Backend row 0 = rank 1 (white home), row 7 = rank 8 (black home).
+        /// FEN goes rank 8 → rank 1, so we iterate rows 7 down to 0.
+        /// </summary>
+        public string ToFEN()
+        {
+            var sb = new StringBuilder();
+            for (int row = 7; row >= 0; row--)
+            {
+                int empty = 0;
+                for (int col = 0; col < 8; col++)
+                {
+                    var piece = Squares[row, col];
+                    if (piece == null) { empty++; }
+                    else
+                    {
+                        if (empty > 0) { sb.Append(empty); empty = 0; }
+                        char c = piece.Type switch
+                        {
+                            PieceType.King   => 'K',
+                            PieceType.Queen  => 'Q',
+                            PieceType.Rook   => 'R',
+                            PieceType.Bishop => 'B',
+                            PieceType.Knight => 'N',
+                            PieceType.Pawn   => 'P',
+                            _ => '?'
+                        };
+                        sb.Append(piece.Color == PieceColor.White ? c : char.ToLower(c));
+                    }
+                }
+                if (empty > 0) sb.Append(empty);
+                if (row > 0) sb.Append('/');
+            }
+            sb.Append(CurrentTurn == PieceColor.White ? " w KQkq - 0 1" : " b KQkq - 0 1");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Rebuilds board state by replaying stored move notations from the start position.
+        /// Moves are in UCI format: "e2e4", "g8f6", etc.
+        /// </summary>
+        public static ChessBoard Replay(IEnumerable<string> moveNotations)
+        {
+            var board = new ChessBoard();
+            foreach (var move in moveNotations)
+            {
+                if (move == null || move.Length < 4) continue;
+                int fromCol = move[0] - 'a';
+                int fromRow = move[1] - '1';
+                int toCol   = move[2] - 'a';
+                int toRow   = move[3] - '1';
+                board.MakeMove(fromRow, fromCol, toRow, toCol);
+            }
+            return board;
         }
     }
 

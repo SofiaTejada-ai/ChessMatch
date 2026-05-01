@@ -11,6 +11,9 @@ using WebApplication.ChessLogic;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
@@ -147,7 +150,7 @@ namespace WebApplication
                 _db = db;
             }
 
-            // POST or GET /demo/session — creates a guest demo user and returns a JWT token
+            // POST /demo/session — creates a guest demo user and returns a JWT token
             [HttpPost("session")]
             [HttpGet("session")]
             public async Task<IActionResult> StartSession()
@@ -304,20 +307,25 @@ namespace WebApplication
             }
 
             // POST /chess/match/ai — creates a match against the ChessHub AI (user_id = 1)
+            // Body: { difficulty: "easy"|"medium"|"hard" }  (difficulty stored in invite_code)
             [HttpPost("match/ai")]
-            public async Task<IActionResult> CreateAiMatch()
+            public async Task<IActionResult> CreateAiMatch([FromBody] CreateAiMatchRequest? req)
             {
                 try
                 {
                     var userId = GetCurrentUserId();
+                    var difficulty = req?.Difficulty ?? "medium";
+                    if (difficulty != "easy" && difficulty != "medium" && difficulty != "hard")
+                        difficulty = "medium";
 
                     var match = new Match
                     {
                         WhiteUserID = userId,
-                        BlackUserID = 1, // ChessHub AI is always user_id = 1
-                        MatchState = "Active",
-                        MatchType = "Direct", // DB CHECK constraint only allows Random/Friend/Direct
-                        CreatedAt = DateTime.UtcNow
+                        BlackUserID = 1,
+                        MatchState  = "Active",
+                        MatchType   = "Direct",
+                        InviteCode  = difficulty, // reuse invite_code to store difficulty for AI matches
+                        CreatedAt   = DateTime.UtcNow
                     };
 
                     var matchId = await _db.CreateMatchAsync(match);
@@ -365,19 +373,41 @@ namespace WebApplication
             }
 
             [HttpGet("match/{matchId}")]
-            //HTTP GET method that retrieves a specific
-            //match by ID and verifies the current user is part of that match.
             public async Task<IActionResult> GetMatch(int matchId)
             {
                 var userId = GetCurrentUserId();
-                var match = await _db.GetMatchByIdAsync(matchId);
-                if (match == null)
-                    return NotFound("Match not found");
-
+                var match  = await _db.GetMatchByIdAsync(matchId);
+                if (match == null) return NotFound("Match not found");
                 if (match.WhiteUserID != userId && match.BlackUserID != userId)
                     return Forbid("You are not part of this match");
 
-                return Ok(match);
+                var whiteUser  = await _db.GetUserByIdAsync(match.WhiteUserID);
+                var blackUser  = await _db.GetUserByIdAsync(match.BlackUserID);
+                var storedMoves = await _db.GetMovesForMatchAsync(matchId);
+
+                var board = ChessBoard.Replay(storedMoves.Select(m => m.MoveNotation));
+                var turn  = board.CurrentTurn == PieceColor.White ? "white" : "black";
+                bool inCheck    = turn == "white" ? board.WhiteKingInCheck : board.BlackKingInCheck;
+                bool checkmate  = board.GameStatus != "Active";
+
+                return Ok(new
+                {
+                    matchId     = match.MatchID,
+                    createdAt   = match.CreatedAt,
+                    matchState  = match.MatchState,
+                    matchType   = match.MatchType,
+                    result      = match.Result,
+                    endReason   = match.EndReason,
+                    inviteCode  = (string?)null, // invite_code stores difficulty for AI matches — don't expose
+                    whiteUserId = match.WhiteUserID,
+                    blackUserId = match.BlackUserID,
+                    players     = new { white = whiteUser?.Username ?? "Unknown", black = blackUser?.Username ?? "Unknown" },
+                    board       = BoardToArray(board),
+                    turn,
+                    moves       = storedMoves.Select(m => m.MoveNotation).ToList(),
+                    check       = inCheck,
+                    checkmate
+                });
             }
 
             [HttpGet("matches")]
@@ -393,18 +423,233 @@ namespace WebApplication
             public async Task<IActionResult> MakeMove(int matchId, [FromBody] MakeMoveRequest req)
             {
                 var userId = GetCurrentUserId();
-
                 if (string.IsNullOrWhiteSpace(req.Move) || req.Move.Length < 4)
                     return BadRequest("Invalid move format");
 
                 var match = await _db.GetMatchByIdAsync(matchId);
-                if (match == null)
-                    return NotFound("Match not found");
+                if (match == null) return NotFound("Match not found");
+                if (match.WhiteUserID != userId && match.BlackUserID != userId)
+                    return Forbid("You are not part of this match");
+                if (match.MatchState != "Active")
+                    return BadRequest("Match is not active");
 
+                var storedMoves = await _db.GetMovesForMatchAsync(matchId);
+                var board = ChessBoard.Replay(storedMoves.Select(m => m.MoveNotation));
+
+                // Verify it's this player's turn
+                bool isWhitePlayer = match.WhiteUserID == userId;
+                bool isWhiteTurn   = board.CurrentTurn == PieceColor.White;
+                if (isWhitePlayer != isWhiteTurn)
+                    return BadRequest("Not your turn");
+
+                // Parse and apply move
+                var mv = req.Move.ToLower();
+                int fromCol = mv[0] - 'a', fromRow = mv[1] - '1';
+                int toCol   = mv[2] - 'a', toRow   = mv[3] - '1';
+
+                if (!board.MakeMove(fromRow, fromCol, toRow, toCol))
+                    return BadRequest("Illegal move");
+
+                var newFen = board.ToFEN();
+                await _db.CreateMoveAsync(matchId, userId, mv, mv, newFen);
+
+                // Check for game-over after player move
+                if (board.GameStatus != "Active")
+                {
+                    string result    = board.GameStatus == "WhiteWins" ? "WhiteWin" : board.GameStatus == "BlackWins" ? "BlackWin" : "Draw";
+                    string endReason = board.GameStatus == "Draw"      ? "Stalemate" : "Checkmate";
+                    int? winnerId    = board.GameStatus == "WhiteWins" ? match.WhiteUserID : board.GameStatus == "BlackWins" ? match.BlackUserID : (int?)null;
+                    await _db.EndMatchAsync(matchId, result, endReason, winnerId);
+                    return Ok(new { message = "Move accepted", move = mv, gameOver = true, result, endReason });
+                }
+
+                // AI response (blackUserId == 1 means ChessHub AI)
+                if (match.BlackUserID == 1)
+                {
+                    var difficulty = match.InviteCode ?? "medium";
+                    var aiMove = await GetGeminiMoveAsync(newFen, difficulty, board);
+                    if (aiMove != null)
+                    {
+                        int aiFromCol = aiMove[0] - 'a', aiFromRow = aiMove[1] - '1';
+                        int aiToCol   = aiMove[2] - 'a', aiToRow   = aiMove[3] - '1';
+                        if (board.MakeMove(aiFromRow, aiFromCol, aiToRow, aiToCol))
+                        {
+                            var aiFen = board.ToFEN();
+                            await _db.CreateMoveAsync(matchId, 1, aiMove, aiMove, aiFen);
+
+                            if (board.GameStatus != "Active")
+                            {
+                                string result    = board.GameStatus == "WhiteWins" ? "WhiteWin" : board.GameStatus == "BlackWins" ? "BlackWin" : "Draw";
+                                string endReason = board.GameStatus == "Draw"      ? "Stalemate" : "Checkmate";
+                                int? winnerId    = board.GameStatus == "WhiteWins" ? match.WhiteUserID : board.GameStatus == "BlackWins" ? match.BlackUserID : (int?)null;
+                                await _db.EndMatchAsync(matchId, result, endReason, winnerId);
+                            }
+                        }
+                    }
+                }
+
+                return Ok(new { message = "Move accepted", move = mv });
+            }
+
+            [HttpPost("match/{matchId}/forfeit")]
+            public async Task<IActionResult> Forfeit(int matchId)
+            {
+                var userId = GetCurrentUserId();
+                var match  = await _db.GetMatchByIdAsync(matchId);
+                if (match == null) return NotFound("Match not found");
+                if (match.WhiteUserID != userId && match.BlackUserID != userId)
+                    return Forbid("You are not part of this match");
+                if (match.MatchState != "Active")
+                    return BadRequest("Match is not active");
+
+                int? winnerId = match.WhiteUserID == userId ? match.BlackUserID : match.WhiteUserID;
+                string result = match.WhiteUserID == userId ? "BlackWin" : "WhiteWin";
+                await _db.EndMatchAsync(matchId, result, "Resignation", winnerId);
+                return Ok(new { message = "Match forfeited" });
+            }
+
+            [HttpGet("match/{matchId}/moves")]
+            public async Task<IActionResult> GetMoves(int matchId)
+            {
+                var userId = GetCurrentUserId();
+                var match  = await _db.GetMatchByIdAsync(matchId);
+                if (match == null) return NotFound("Match not found");
                 if (match.WhiteUserID != userId && match.BlackUserID != userId)
                     return Forbid("You are not part of this match");
 
-                return Ok(new { message = "Move accepted", move = req.Move });
+                var moves = await _db.GetMovesForMatchAsync(matchId);
+                return Ok(moves.Select((m, i) => new
+                {
+                    moveId     = i + 1,
+                    matchId,
+                    playerUserId                    = m.PlayerUserId,
+                    moveNotation                    = m.MoveNotation,
+                    moveStandardAlgebraicNotation   = m.MoveNotation,
+                    moveForsythEdwardsNotation      = m.FEN,
+                    moveTime                        = DateTime.UtcNow
+                }));
+            }
+
+            [HttpPost("match/{matchId}/chat/ask-ai")]
+            public async Task<IActionResult> AskAI(int matchId)
+            {
+                var userId = GetCurrentUserId();
+                var match  = await _db.GetMatchByIdAsync(matchId);
+                if (match == null) return NotFound("Match not found");
+                if (match.WhiteUserID != userId && match.BlackUserID != userId)
+                    return Forbid("You are not part of this match");
+
+                var storedMoves = await _db.GetMovesForMatchAsync(matchId);
+                var board = ChessBoard.Replay(storedMoves.Select(m => m.MoveNotation));
+                var fen   = board.ToFEN();
+                var lastMove = storedMoves.LastOrDefault()?.MoveNotation ?? "none";
+
+                var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+                if (string.IsNullOrEmpty(apiKey))
+                    return Ok(new { message = "AI analysis unavailable (no API key configured)." });
+
+                var prompt = $"You are a chess coach. The current position in FEN notation is: {fen}\nThe last move played was: {lastMove}\nBriefly explain what happened in this move and suggest a good strategy going forward. Keep your response to 2-3 sentences.";
+                var reply  = await CallGeminiTextAsync(apiKey, prompt);
+                if (reply == null) return Ok(new { message = "AI analysis unavailable right now." });
+
+                await _db.CreateChatMessageAsync(matchId, 1, reply);
+                return Ok(new { message = reply });
+            }
+
+            // ── Helpers ──────────────────────────────────────────────────────────
+
+            private static string[][] BoardToArray(ChessBoard board)
+            {
+                // Frontend row 0 = rank 8 = backend row 7 (black's home rank)
+                var arr = new string[8][];
+                for (int r = 0; r < 8; r++)
+                {
+                    arr[r] = new string[8];
+                    for (int c = 0; c < 8; c++)
+                    {
+                        var piece = board.Squares[7 - r, c];
+                        if (piece == null) { arr[r][c] = ""; continue; }
+                        char ch = piece.Type switch
+                        {
+                            PieceType.King   => 'K',
+                            PieceType.Queen  => 'Q',
+                            PieceType.Rook   => 'R',
+                            PieceType.Bishop => 'B',
+                            PieceType.Knight => 'N',
+                            PieceType.Pawn   => 'P',
+                            _ => '?'
+                        };
+                        arr[r][c] = piece.Color == PieceColor.White ? ch.ToString() : char.ToLower(ch).ToString();
+                    }
+                }
+                return arr;
+            }
+
+            private async Task<string?> GetGeminiMoveAsync(string fen, string difficulty, ChessBoard board)
+            {
+                var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+                if (string.IsNullOrEmpty(apiKey)) return FallbackMove(board);
+
+                var difficultyNote = difficulty switch
+                {
+                    "easy" => "You are a beginner. Make simple, occasionally suboptimal moves.",
+                    "hard" => "You are a grandmaster. Make the strongest possible move.",
+                    _      => "You are an intermediate player. Make solid, reasonable moves."
+                };
+                var prompt = $"You are playing chess as Black. {difficultyNote}\nCurrent position (FEN): {fen}\nReply with ONLY your move in UCI format (e.g. e7e5). Nothing else — just the 4-character move string.";
+                var reply  = await CallGeminiTextAsync(apiKey, prompt);
+
+                if (reply != null)
+                {
+                    var mv = reply.Trim().ToLower().Split(' ')[0];
+                    if (mv.Length >= 4 && char.IsLetter(mv[0]) && char.IsDigit(mv[1]) && char.IsLetter(mv[2]) && char.IsDigit(mv[3]))
+                    {
+                        int fc = mv[0]-'a', fr = mv[1]-'1', tc = mv[2]-'a', tr = mv[3]-'1';
+                        if (board.IsValidMove(fr, fc, tr, tc))
+                            return mv.Substring(0, 4);
+                    }
+                }
+                return FallbackMove(board);
+            }
+
+            private static string? FallbackMove(ChessBoard board)
+            {
+                // Pick the first legal move for the current player
+                for (int r = 0; r < 8; r++)
+                    for (int c = 0; c < 8; c++)
+                    {
+                        var piece = board.Squares[r, c];
+                        if (piece == null || piece.Color != board.CurrentTurn) continue;
+                        var moves = board.GetValidMoves(r, c);
+                        if (moves.Count == 0) continue;
+                        var (tr, tc) = moves[0];
+                        return $"{(char)('a' + c)}{r + 1}{(char)('a' + tc)}{tr + 1}";
+                    }
+                return null;
+            }
+
+            private static async Task<string?> CallGeminiTextAsync(string apiKey, string prompt)
+            {
+                try
+                {
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                    var url  = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
+                    var body = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        contents = new[] { new { parts = new[] { new { text = prompt } } } }
+                    });
+                    var resp = await http.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
+                    if (!resp.IsSuccessStatusCode) return null;
+                    var json = await resp.Content.ReadAsStringAsync();
+                    var doc  = System.Text.Json.JsonDocument.Parse(json);
+                    return doc.RootElement
+                        .GetProperty("candidates")[0]
+                        .GetProperty("content")
+                        .GetProperty("parts")[0]
+                        .GetProperty("text")
+                        .GetString();
+                }
+                catch { return null; }
             }
 
             [HttpGet("match/{matchId}/chat")]
@@ -452,5 +697,10 @@ namespace WebApplication.DataManagement
     public class SendChatRequest
     {
         public string Message { get; set; } = "";
+    }
+
+    public class CreateAiMatchRequest
+    {
+        public string Difficulty { get; set; } = "medium";
     }
 }
