@@ -84,7 +84,7 @@ namespace WebApplication
         {
             private readonly DatabaseHelper _db; //Private readonly field that stores a DatabaseHelper instance
            //readonly means that the value cannot be changed after initialization
-            private readonly string _jwtKey = "REDACTED";
+            private static readonly string _jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET") ?? throw new InvalidOperationException("JWT_SECRET environment variable is not set");
             //Stores a JWT (JSON Web Token) key used for authentication
             //JWT Key is a secret password used to create and verify JWT tokens for secure authentication
             public LoginController(DatabaseHelper db)
@@ -143,7 +143,7 @@ namespace WebApplication
         public class DemoController : ControllerBase
         {
             private readonly DatabaseHelper _db;
-            private readonly string _jwtKey = "REDACTED";
+            private static readonly string _jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET") ?? throw new InvalidOperationException("JWT_SECRET environment variable is not set");
 
             public DemoController(DatabaseHelper db)
             {

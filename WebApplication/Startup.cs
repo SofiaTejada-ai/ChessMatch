@@ -46,7 +46,7 @@ namespace WebApplication
                         ValidateIssuerSigningKey = true,
                         ValidIssuer = "ChessHub",
                         ValidAudience = "ChessHub",
-                        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("REDACTED"))
+                        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(System.Environment.GetEnvironmentVariable("JWT_SECRET") ?? throw new InvalidOperationException("JWT_SECRET environment variable is not set")))
                     };
                 });
                 
