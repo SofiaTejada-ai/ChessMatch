@@ -172,7 +172,7 @@ namespace WebApplication
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, new { error = "Could not create demo user", detail = ex.Message });
+                    return StatusCode(500, new { error = "Could not create demo user", detail = ex.GetType().Name });
                 }
 
                 // Generate JWT token for the guest

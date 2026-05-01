@@ -26,17 +26,11 @@ namespace WebApplication
             
             // Add DatabaseHelper with connection string
             // Use DATABASE_URL env var on Railway/Supabase, fall back to local PostgreSQL for dev
-            var connectionString = System.Environment.GetEnvironmentVariable("DATABASE_URL") 
+            var rawConnStr = System.Environment.GetEnvironmentVariable("DATABASE_URL") 
                 ?? "Host=localhost;Database=ChessHub;Username=postgres;Password=postgres";
             
-            // Supabase requires SSL — ensure it's set
-            if (!connectionString.Contains("SSL Mode") && !connectionString.Contains("sslmode"))
-            {
-                if (connectionString.StartsWith("postgresql://") || connectionString.StartsWith("postgres://"))
-                    connectionString += connectionString.Contains("?") ? "&sslmode=require" : "?sslmode=require";
-                else
-                    connectionString += ";SSL Mode=Require;Trust Server Certificate=true";
-            }
+            // Convert Supabase URI format to Npgsql key-value format
+            var connectionString = ConvertToNpgsqlConnectionString(rawConnStr);
             
             services.AddSingleton(new DatabaseHelper(connectionString));
             
@@ -57,6 +51,24 @@ namespace WebApplication
                 });
                 
             services.AddAuthorization();
+        }
+
+        private static string ConvertToNpgsqlConnectionString(string url)
+        {
+            // Already key-value format
+            if (!url.StartsWith("postgresql://") && !url.StartsWith("postgres://"))
+                return url;
+
+            // Parse URI: postgresql://user:password@host:port/database
+            var uri = new Uri(url.Replace("postgresql://", "https://").Replace("postgres://", "https://"));
+            var userInfo = uri.UserInfo.Split(':');
+            var username = Uri.UnescapeDataString(userInfo[0]);
+            var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+            var host = uri.Host;
+            var port = uri.Port > 0 ? uri.Port : 5432;
+            var database = uri.AbsolutePath.TrimStart('/');
+
+            return $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true";
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
