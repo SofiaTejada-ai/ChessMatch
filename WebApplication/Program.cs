@@ -548,7 +548,7 @@ namespace WebApplication
                 if (string.IsNullOrEmpty(apiKey))
                     return Ok(new { message = "AI analysis unavailable (no API key configured)." });
 
-                var prompt = $"You are a chess coach. The current position in FEN notation is: {fen}\nThe last move played was: {lastMove}\nBriefly explain what happened in this move and suggest a good strategy going forward. Keep your response to 2-3 sentences.";
+                var prompt = $"You are ChessHub AI, a chess opponent. The current position (FEN): {fen}. The last move was: {lastMove}. In 1-2 sentences, explain what that move did tactically and hint at what you (as Black) are thinking about next. Be a little competitive about it.";
                 var reply  = await CallGeminiTextAsync(apiKey, prompt);
                 if (reply == null) return Ok(new { message = "AI analysis unavailable right now." });
 
@@ -656,25 +656,83 @@ namespace WebApplication
             public async Task<IActionResult> GetChat(int matchId)
             {
                 var userId = GetCurrentUserId();
-                var match = await _db.GetMatchByIdAsync(matchId);
+                var match  = await _db.GetMatchByIdAsync(matchId);
                 if (match == null) return NotFound("Match not found");
-                if (match.WhiteUserID != userId && match.BlackUserID != userId)
-                    return Forbid();
+                if (match.WhiteUserID != userId && match.BlackUserID != userId) return Forbid();
                 var messages = await _db.GetChatMessagesAsync(matchId);
-                return Ok(messages);
+                // Return camelCase shape the frontend expects: { messageId, user, text, sentAt }
+                return Ok(messages.Select(m => new
+                {
+                    messageId = m.MessageId,
+                    user      = m.User,
+                    text      = m.Text,
+                    sentAt    = m.SentAt
+                }));
             }
 
             [HttpPost("match/{matchId}/chat")]
             public async Task<IActionResult> SendChat(int matchId, [FromBody] SendChatRequest req)
             {
                 var userId = GetCurrentUserId();
-                var match = await _db.GetMatchByIdAsync(matchId);
+                var match  = await _db.GetMatchByIdAsync(matchId);
                 if (match == null) return NotFound("Match not found");
-                if (match.WhiteUserID != userId && match.BlackUserID != userId)
-                    return Forbid();
-                if (string.IsNullOrWhiteSpace(req.Message))
-                    return BadRequest("Message cannot be empty");
-                await _db.CreateChatMessageAsync(matchId, userId, req.Message);
+                if (match.WhiteUserID != userId && match.BlackUserID != userId) return Forbid();
+                if (string.IsNullOrWhiteSpace(req.Message)) return BadRequest("Message cannot be empty");
+
+                // Snapshot conversation history BEFORE storing new message
+                var history = await _db.GetChatMessagesAsync(matchId);
+
+                // Store the player's message
+                await _db.CreateChatMessageAsync(matchId, userId, req.Message.Trim());
+
+                // AI match: generate a contextual Gemini reply
+                if (match.BlackUserID == 1)
+                {
+                    var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+                    if (!string.IsNullOrEmpty(apiKey))
+                    {
+                        // Build conversation history string
+                        var historyText = history.Count == 0
+                            ? "(no previous messages)"
+                            : string.Join("\n", history.Select(m =>
+                                $"{(m.SenderUserId == 1 ? "ChessHub AI" : "Player")}: {m.Text}"));
+
+                        // Get current game state for context
+                        var storedMoves = await _db.GetMovesForMatchAsync(matchId);
+                        var board       = ChessBoard.Replay(storedMoves.Select(m => m.MoveNotation));
+                        var fen         = board.ToFEN();
+                        var turn        = board.CurrentTurn == PieceColor.White ? "White" : "Black";
+
+                        var prompt = $@"You are ChessHub AI — an intelligent, competitive chess opponent with personality. You are in the middle of a chess game against the player.
+
+Game state:
+- Position (FEN): {fen}
+- Moves played so far: {storedMoves.Count}
+- It is {turn}'s turn next
+
+Conversation history (most recent at bottom):
+{historyText}
+
+Player just said: ""{req.Message.Trim()}""
+
+Reply as ChessHub AI. Rules:
+- Keep it SHORT: 1-2 sentences maximum
+- Stay in character: you are an AI chess opponent — competitive, clever, occasionally witty
+- If the player asks about the game or strategy, give a brief comment about the current position
+- If they trash-talk, respond confidently
+- If they ask for help, give a small hint without giving away the best move
+- Never break character or acknowledge you are a large language model";
+
+                        var aiReply = await CallGeminiTextAsync(apiKey, prompt);
+                        if (aiReply != null)
+                        {
+                            var clean = aiReply.Trim();
+                            await _db.CreateChatMessageAsync(matchId, 1, clean);
+                            return Ok(new { message = "Message sent", aiReply = clean });
+                        }
+                    }
+                }
+
                 return Ok(new { message = "Message sent" });
             }
 

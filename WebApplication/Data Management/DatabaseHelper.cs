@@ -392,9 +392,9 @@ namespace WebApplication.DataManagement
             return leaderboard;
         }
 
-        public async Task<List<object>> GetChatMessagesAsync(int matchId)
+        public async Task<List<ChatRecord>> GetChatMessagesAsync(int matchId)
         {
-            var messages = new List<object>();
+            var messages = new List<ChatRecord>();
             using (var conn = new NpgsqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
@@ -406,15 +406,14 @@ namespace WebApplication.DataManagement
                     cmd.Parameters.AddWithValue("matchId", matchId);
                     using var reader = await cmd.ExecuteReaderAsync();
                     while (await reader.ReadAsync())
-                    {
-                        messages.Add(new {
-                            messageId = reader.GetInt32(0),
-                            senderUserId = reader.GetInt32(1),
-                            username = reader.GetString(2),
-                            messageText = reader.GetString(3),
-                            sentAt = reader.GetDateTime(4)
+                        messages.Add(new ChatRecord
+                        {
+                            MessageId    = reader.GetInt32(0),
+                            SenderUserId = reader.GetInt32(1),
+                            User         = reader.GetString(2),
+                            Text         = reader.GetString(3),
+                            SentAt       = reader.GetDateTime(4)
                         });
-                    }
                 }
             }
             return messages;
@@ -508,5 +507,14 @@ namespace WebApplication.DataManagement
         public string MoveNotation { get; set; } = "";
         public string FEN          { get; set; } = "";
         public int    PlayerUserId { get; set; }
+    }
+
+    public class ChatRecord
+    {
+        public int      MessageId    { get; set; }
+        public int      SenderUserId { get; set; }
+        public string   User         { get; set; } = "";
+        public string   Text         { get; set; } = "";
+        public DateTime SentAt       { get; set; }
     }
 }
