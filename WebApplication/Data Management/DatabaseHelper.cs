@@ -391,5 +391,49 @@ namespace WebApplication.DataManagement
             
             return leaderboard;
         }
+
+        public async Task<List<object>> GetChatMessagesAsync(int matchId)
+        {
+            var messages = new List<object>();
+            using (var conn = new NpgsqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                var sql = @"SELECT m.message_id, m.sender_user_id, u.username, m.message_text, m.sent_at
+                            FROM chat_messages m JOIN users u ON m.sender_user_id = u.user_id
+                            WHERE m.match_id = @matchId ORDER BY m.sent_at ASC";
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("matchId", matchId);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        messages.Add(new {
+                            messageId = reader.GetInt32(0),
+                            senderUserId = reader.GetInt32(1),
+                            username = reader.GetString(2),
+                            messageText = reader.GetString(3),
+                            sentAt = reader.GetDateTime(4)
+                        });
+                    }
+                }
+            }
+            return messages;
+        }
+
+        public async Task CreateChatMessageAsync(int matchId, int senderUserId, string messageText)
+        {
+            using (var conn = new NpgsqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                var sql = "INSERT INTO chat_messages (match_id, sender_user_id, message_text, sent_at) VALUES (@matchId, @sender, @text, NOW())";
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("matchId", matchId);
+                    cmd.Parameters.AddWithValue("sender", senderUserId);
+                    cmd.Parameters.AddWithValue("text", messageText);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+        }
     }
 }

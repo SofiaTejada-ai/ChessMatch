@@ -85,10 +85,10 @@ namespace WebApplication
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            app.UseRouting();
-
-            // Enable CORS before auth
+            // CORS must be before routing so it applies to ALL responses including 401/403
             app.UseCors("AllowFrontend");
+
+            app.UseRouting();
 
             // Add authentication middleware
             app.UseAuthentication();

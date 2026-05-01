@@ -400,6 +400,32 @@ namespace WebApplication
                 return Ok(new { message = "Move accepted", move = req.Move });
             }
 
+            [HttpGet("match/{matchId}/chat")]
+            public async Task<IActionResult> GetChat(int matchId)
+            {
+                var userId = GetCurrentUserId();
+                var match = await _db.GetMatchByIdAsync(matchId);
+                if (match == null) return NotFound("Match not found");
+                if (match.WhiteUserID != userId && match.BlackUserID != userId)
+                    return Forbid();
+                var messages = await _db.GetChatMessagesAsync(matchId);
+                return Ok(messages);
+            }
+
+            [HttpPost("match/{matchId}/chat")]
+            public async Task<IActionResult> SendChat(int matchId, [FromBody] SendChatRequest req)
+            {
+                var userId = GetCurrentUserId();
+                var match = await _db.GetMatchByIdAsync(matchId);
+                if (match == null) return NotFound("Match not found");
+                if (match.WhiteUserID != userId && match.BlackUserID != userId)
+                    return Forbid();
+                if (string.IsNullOrWhiteSpace(req.Message))
+                    return BadRequest("Message cannot be empty");
+                await _db.CreateChatMessageAsync(matchId, userId, req.Message);
+                return Ok(new { message = "Message sent" });
+            }
+
             private string GenerateInviteCode()
             {
                 const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -412,4 +438,12 @@ namespace WebApplication
                 return new string(code);
             }
         }
+}
+
+namespace WebApplication.DataManagement
+{
+    public class SendChatRequest
+    {
+        public string Message { get; set; } = "";
+    }
 }
