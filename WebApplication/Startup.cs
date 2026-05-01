@@ -85,9 +85,22 @@ namespace WebApplication
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            // CORS must be before routing so it applies to ALL responses including 401/403
-            app.UseCors("AllowFrontend");
+            // Force CORS headers on every single response - must be first, before auth can intercept
+            app.Use(async (context, next) =>
+            {
+                context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+                context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH";
+                context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept";
+                if (context.Request.Method == "OPTIONS")
+                {
+                    context.Response.StatusCode = 200;
+                    await context.Response.CompleteAsync();
+                    return;
+                }
+                await next(context);
+            });
 
+            app.UseCors("AllowFrontend");
             app.UseRouting();
 
             // Add authentication middleware
