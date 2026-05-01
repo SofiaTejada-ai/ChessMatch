@@ -303,6 +303,25 @@ namespace WebApplication
                 return int.Parse(userIdClaim.Value);
             }
 
+            // POST /chess/match/ai — creates a match against the ChessHub AI (user_id = 1)
+            [HttpPost("match/ai")]
+            public async Task<IActionResult> CreateAiMatch()
+            {
+                var userId = GetCurrentUserId();
+
+                var match = new Match
+                {
+                    WhiteUserID = userId,
+                    BlackUserID = 1, // ChessHub AI is always user_id = 1
+                    MatchState = "Active",
+                    MatchType = "AI",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                var matchId = await _db.CreateMatchAsync(match);
+                return Ok(new { message = "AI match created", matchId = matchId, opponentName = "ChessHub AI" });
+            }
+
             [HttpPost("match/create")]
             public async Task<IActionResult> CreateMatch([FromBody] CreateMatchRequest req)
             {
