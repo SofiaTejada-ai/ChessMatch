@@ -550,7 +550,13 @@ namespace WebApplication
 
                 var prompt = $"You are ChessHub AI, a chess opponent. The current position (FEN): {fen}. The last move was: {lastMove}. In 1-2 sentences, explain what that move did tactically and hint at what you (as Black) are thinking about next. Be a little competitive about it.";
                 var (reply, askError) = await CallGeminiTextAsync(apiKey, prompt);
-                if (reply == null) return Ok(new { message = $"AI analysis unavailable: {askError}" });
+                if (reply == null)
+                {
+                    var msg = askError == "RATE_LIMITED"
+                        ? "My thinking quota ran out — even grandmasters need a breather. Try again in a minute!"
+                        : $"[AI analysis unavailable: {askError}]";
+                    return Ok(new { message = msg });
+                }
 
                 await _db.CreateChatMessageAsync(matchId, 1, reply);
                 return Ok(new { message = reply });
@@ -640,6 +646,8 @@ namespace WebApplication
                     });
                     var resp = await http.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
                     var responseText = await resp.Content.ReadAsStringAsync();
+                    if ((int)resp.StatusCode == 429)
+                        return (null, "RATE_LIMITED");
                     if (!resp.IsSuccessStatusCode)
                         return (null, $"HTTP {(int)resp.StatusCode}: {responseText.Substring(0, Math.Min(200, responseText.Length))}");
                     var doc = System.Text.Json.JsonDocument.Parse(responseText);
@@ -735,8 +743,9 @@ Reply as ChessHub AI. Rules:
                             await _db.CreateChatMessageAsync(matchId, 1, clean);
                             return Ok(new { message = "Message sent", aiReply = clean });
                         }
-                        // Store the error as a visible chat message so you can debug from the UI
-                        var debugMsg = $"[AI unavailable: {aiError}]";
+                        var debugMsg = aiError == "RATE_LIMITED"
+                            ? "My thinking quota ran out — even grandmasters need a breather. Try again in a minute!"
+                            : $"[AI unavailable: {aiError}]";
                         await _db.CreateChatMessageAsync(matchId, 1, debugMsg);
                         return Ok(new { message = "Message sent", aiReply = debugMsg });
                     }
