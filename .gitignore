@@ -1,0 +1,22 @@
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/
+*.log
+*.db
+*.db-journal
+*.DS_Store
+node_modules/
+.env
+appsettings.*.json
+
+# SQL Server LocalDB
+*.mdf
+*.ldf
+
+# Ignore Rider/IDE files
+.idea/

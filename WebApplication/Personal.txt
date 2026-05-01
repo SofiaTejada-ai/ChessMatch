@@ -1,0 +1,11 @@
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' add .gitignore
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' commit -m "Add .gitignore"
+
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' add ChessQuery.sql WebApplication
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' commit -m "Add DB script and WebApplication files"
+
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' pull --rebase origin main
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' push origin main
+
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' rm --cached -r ".vs"
+& 'C:\Program Files\Git\cmd\git.exe' -C 'C:\Users\sofia\source\repos\SofiaTejada-ai\ChessMatch' commit -m "Remove .vs from index"
