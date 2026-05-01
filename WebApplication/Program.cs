@@ -24,8 +24,8 @@ namespace WebApplication
         {
             var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder(args);
             
-            // Add services from Startup (pass configuration so secrets come from appsettings)
-            var startup = new Startup(builder.Configuration);
+            // Add services from Startup
+            var startup = new Startup();
             startup.ConfigureServices(builder.Services);
             
             var app = builder.Build();
@@ -81,12 +81,12 @@ namespace WebApplication
         {
             private readonly DatabaseHelper _db; //Private readonly field that stores a DatabaseHelper instance
            //readonly means that the value cannot be changed after initialization
-            private readonly JwtSettings _jwtSettings;
-            //Stores JWT settings read from configuration (no hardcoded secrets)
-            public LoginController(DatabaseHelper db, JwtSettings jwtSettings)
+            private readonly string _jwtKey = "REDACTED";
+            //Stores a JWT (JSON Web Token) key used for authentication
+            //JWT Key is a secret password used to create and verify JWT tokens for secure authentication
+            public LoginController(DatabaseHelper db)
             {
                 _db = db;
-                _jwtSettings = jwtSettings;
             }
 
             [HttpPost]
@@ -103,7 +103,7 @@ namespace WebApplication
                     return Unauthorized("Invalid username or password");
 
                 var tokenHandler = new JwtSecurityTokenHandler();
-                var key = Encoding.UTF8.GetBytes(_jwtSettings.Key);
+                var key = Encoding.UTF8.GetBytes(_jwtKey);
                 var tokenDescriptor = new SecurityTokenDescriptor
                 {
                     Subject = new ClaimsIdentity(new[] { 
@@ -115,8 +115,8 @@ namespace WebApplication
                     //claims store user information in the JWT token so the server can identiy who made the request
                     Expires = DateTime.UtcNow.AddDays(7),
                     //Sets the expiration time for the token
-                    Issuer = _jwtSettings.Issuer,
-                    Audience = _jwtSettings.Audience,
+                    Issuer = "ChessHub",
+                    Audience = "ChessHub",
                     //issuer identifies who created the token, Audience identifies who can use the token
                     SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
                     //Specifies the signing credentials for the token
