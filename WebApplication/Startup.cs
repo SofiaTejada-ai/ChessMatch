@@ -92,7 +92,7 @@ namespace WebApplication
                     context.Response.ContentType = "application/json";
                     try
                     {
-                        var db = app.Services.GetRequiredService<DatabaseHelper>();
+                        var db = context.RequestServices.GetRequiredService<DatabaseHelper>();
                         var user = await db.GetUserByIdAsync(1);
                         await context.Response.WriteAsync($"{{\"db\":\"connected\",\"user\":\"{user?.Username ?? "none"}\"}}");
                     }

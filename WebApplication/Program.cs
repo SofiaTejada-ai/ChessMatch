@@ -136,6 +136,76 @@ namespace WebApplication
         }
 
         [ApiController]
+        [Route("demo")]
+        public class DemoController : ControllerBase
+        {
+            private readonly DatabaseHelper _db;
+            private readonly string _jwtKey = "REDACTED";
+
+            public DemoController(DatabaseHelper db)
+            {
+                _db = db;
+            }
+
+            // POST or GET /demo/session — creates a guest demo user and returns a JWT token
+            [HttpPost("session")]
+            [HttpGet("session")]
+            public async Task<IActionResult> StartSession()
+            {
+                // Create a unique guest username
+                var guestUsername = $"guest_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
+                var guestEmail = $"{guestUsername}@demo.chesshub.com";
+                var guestPassword = Guid.NewGuid().ToString();
+
+                int userId;
+                try
+                {
+                    var user = new User
+                    {
+                        Username = guestUsername,
+                        Email = guestEmail,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(guestPassword),
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    };
+                    userId = await _db.CreateUserAsync(user);
+                }
+                catch (Exception ex)
+                {
+                    return StatusCode(500, new { error = "Could not create demo user", detail = ex.Message });
+                }
+
+                // Generate JWT token for the guest
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var key = Encoding.UTF8.GetBytes(_jwtKey);
+                var tokenDescriptor = new SecurityTokenDescriptor
+                {
+                    Subject = new ClaimsIdentity(new[] {
+                        new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                        new Claim(ClaimTypes.Name, guestUsername),
+                        new Claim(ClaimTypes.Email, guestEmail),
+                        new Claim("isGuest", "true")
+                    }),
+                    Expires = DateTime.UtcNow.AddDays(1),
+                    Issuer = "ChessHub",
+                    Audience = "ChessHub",
+                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                };
+
+                var token = tokenHandler.CreateToken(tokenDescriptor);
+                var tokenString = tokenHandler.WriteToken(token);
+
+                return Ok(new
+                {
+                    userId = userId,
+                    username = guestUsername,
+                    token = tokenString,
+                    isGuest = true
+                });
+            }
+        }
+
+        [ApiController]
         [Route("[controller]")]
         [Authorize]
         public class UserController : ControllerBase
