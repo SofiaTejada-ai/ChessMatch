@@ -95,10 +95,10 @@ namespace WebApplication
                 app.UseDeveloperExceptionPage();
             }
 
-            app.UseRouting();
-
-            // Enable CORS before auth
+            // Enable CORS before everything so headers are always sent
             app.UseCors("AllowFrontend");
+
+            app.UseRouting();
 
             // Add authentication middleware
             app.UseAuthentication();

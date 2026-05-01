@@ -151,45 +151,52 @@ namespace WebApplication
             [HttpPost("session")]
             public async Task<IActionResult> CreateDemoSession()
             {
-                // Create a guest user with a unique name
-                var guestName = "Guest_" + Guid.NewGuid().ToString("N").Substring(0, 8);
-                var user = new User
+                try
                 {
-                    Username = guestName,
-                    Email = guestName + "@demo.chesshub.com",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("demo_" + Guid.NewGuid().ToString()),
-                    CreatedAt = DateTime.UtcNow,
-                    IsActive = true
-                };
+                    // Create a guest user with a unique name
+                    var guestName = "Guest_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                    var user = new User
+                    {
+                        Username = guestName,
+                        Email = guestName + "@demo.chesshub.com",
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword("demo_" + Guid.NewGuid().ToString()),
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    };
 
-                var userId = await _db.CreateUserAsync(user);
+                    var userId = await _db.CreateUserAsync(user);
 
-                // Generate JWT token for the guest user
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var key = Encoding.UTF8.GetBytes(_jwtSettings.Key);
-                var tokenDescriptor = new SecurityTokenDescriptor
+                    // Generate JWT token for the guest user
+                    var tokenHandler = new JwtSecurityTokenHandler();
+                    var key = Encoding.UTF8.GetBytes(_jwtSettings.Key);
+                    var tokenDescriptor = new SecurityTokenDescriptor
+                    {
+                        Subject = new ClaimsIdentity(new[] {
+                            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                            new Claim(ClaimTypes.Name, user.Username),
+                            new Claim(ClaimTypes.Email, user.Email)
+                        }),
+                        Expires = DateTime.UtcNow.AddHours(24),
+                        Issuer = _jwtSettings.Issuer,
+                        Audience = _jwtSettings.Audience,
+                        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                    };
+
+                    var token = tokenHandler.CreateToken(tokenDescriptor);
+                    var tokenString = tokenHandler.WriteToken(token);
+
+                    return Ok(new LoginResponse
+                    {
+                        UserId = userId,
+                        Username = user.Username,
+                        Email = user.Email,
+                        Token = tokenString
+                    });
+                }
+                catch (Exception ex)
                 {
-                    Subject = new ClaimsIdentity(new[] {
-                        new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-                        new Claim(ClaimTypes.Name, user.Username),
-                        new Claim(ClaimTypes.Email, user.Email)
-                    }),
-                    Expires = DateTime.UtcNow.AddHours(24),
-                    Issuer = _jwtSettings.Issuer,
-                    Audience = _jwtSettings.Audience,
-                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-                };
-
-                var token = tokenHandler.CreateToken(tokenDescriptor);
-                var tokenString = tokenHandler.WriteToken(token);
-
-                return Ok(new LoginResponse
-                {
-                    UserId = userId,
-                    Username = user.Username,
-                    Email = user.Email,
-                    Token = tokenString
-                });
+                    return StatusCode(500, new { error = ex.Message, detail = ex.InnerException?.Message });
+                }
             }
         }
 
