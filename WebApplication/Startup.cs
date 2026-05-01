@@ -86,7 +86,7 @@ namespace WebApplication
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             // Force CORS headers on every single response - must be first, before auth can intercept
-            // Also disable CDN caching to prevent stale responses without CORS headers
+            // Also catches all exceptions so 500 errors don't lose their CORS headers
             app.Use(async (context, next) =>
             {
                 context.Response.OnStarting(() =>
@@ -106,7 +106,21 @@ namespace WebApplication
                     await context.Response.CompleteAsync();
                     return;
                 }
-                await next(context);
+                try
+                {
+                    await next(context);
+                }
+                catch (Exception ex)
+                {
+                    // Ensure even unhandled exceptions return CORS headers
+                    if (!context.Response.HasStarted)
+                    {
+                        context.Response.StatusCode = 500;
+                        context.Response.ContentType = "application/json";
+                        context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+                        await context.Response.WriteAsync($"{{\"error\":\"Internal server error\",\"type\":\"{ex.GetType().Name}\"}}");
+                    }
+                }
             });
 
             app.UseCors("AllowFrontend");

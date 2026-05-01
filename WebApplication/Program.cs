@@ -307,19 +307,26 @@ namespace WebApplication
             [HttpPost("match/ai")]
             public async Task<IActionResult> CreateAiMatch()
             {
-                var userId = GetCurrentUserId();
-
-                var match = new Match
+                try
                 {
-                    WhiteUserID = userId,
-                    BlackUserID = 1, // ChessHub AI is always user_id = 1
-                    MatchState = "Active",
-                    MatchType = "AI",
-                    CreatedAt = DateTime.UtcNow
-                };
+                    var userId = GetCurrentUserId();
 
-                var matchId = await _db.CreateMatchAsync(match);
-                return Ok(new { message = "AI match created", matchId = matchId, opponentName = "ChessHub AI" });
+                    var match = new Match
+                    {
+                        WhiteUserID = userId,
+                        BlackUserID = 1, // ChessHub AI is always user_id = 1
+                        MatchState = "Active",
+                        MatchType = "Direct", // DB CHECK constraint only allows Random/Friend/Direct
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    var matchId = await _db.CreateMatchAsync(match);
+                    return Ok(new { message = "AI match created", matchId = matchId, opponentName = "ChessHub AI" });
+                }
+                catch (Exception ex)
+                {
+                    return StatusCode(500, new { error = "Could not create AI match", detail = ex.GetType().Name, message = ex.Message.Length > 300 ? ex.Message.Substring(0, 300) : ex.Message });
+                }
             }
 
             [HttpPost("match/create")]
