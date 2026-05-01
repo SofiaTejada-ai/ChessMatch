@@ -59,20 +59,40 @@ namespace WebApplication
             if (!url.StartsWith("postgresql://") && !url.StartsWith("postgres://"))
                 return url;
 
-            // Parse URI: postgresql://user:password@host:port/database
-            var uri = new Uri(url.Replace("postgresql://", "https://").Replace("postgres://", "https://"));
-            var userInfo = uri.UserInfo.Split(':');
-            var username = Uri.UnescapeDataString(userInfo[0]);
-            var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
-            var host = uri.Host;
-            var port = uri.Port > 0 ? uri.Port : 5432;
-            var database = uri.AbsolutePath.TrimStart('/');
+            // Strip scheme
+            var withoutScheme = url.Replace("postgresql://", "").Replace("postgres://", "");
+            
+            // Split userinfo from hostinfo at the last @ before the host
+            var atIndex = withoutScheme.LastIndexOf('@');
+            var userInfo = withoutScheme.Substring(0, atIndex);
+            var hostInfo = withoutScheme.Substring(atIndex + 1);
+
+            // Split username:password (only first colon is the separator)
+            var colonIndex = userInfo.IndexOf(':');
+            var username = Uri.UnescapeDataString(colonIndex >= 0 ? userInfo.Substring(0, colonIndex) : userInfo);
+            var password = Uri.UnescapeDataString(colonIndex >= 0 ? userInfo.Substring(colonIndex + 1) : "");
+
+            // Split host:port/database
+            var slashIndex = hostInfo.IndexOf('/');
+            var hostPort = slashIndex >= 0 ? hostInfo.Substring(0, slashIndex) : hostInfo;
+            var database = slashIndex >= 0 ? hostInfo.Substring(slashIndex + 1).Split('?')[0] : "postgres";
+            var hostParts = hostPort.Split(':');
+            var host = hostParts[0];
+            var port = hostParts.Length > 1 ? hostParts[1] : "5432";
 
             return $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true";
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            // Maintenance mode: all requests return 503 with a maintenance message
+            app.Use(async (context, next) =>
+            {
+                context.Response.StatusCode = 503;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync("{\"status\":\"maintenance\",\"message\":\"ChessHub is currently under maintenance. Please check back soon!\"}");
+            });
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
