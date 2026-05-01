@@ -1,7 +1,5 @@
 using System.Data;
-using System.Data.Common;
 using Microsoft.Data.SqlClient;
-using Npgsql;
 using WebApplication.DataManagement.Models;
 
 namespace WebApplication.DataManagement
@@ -9,49 +7,19 @@ namespace WebApplication.DataManagement
     /// <summary>
     /// Raw SQL database helper class that replaces Entity Framework
     /// Uses direct SQL queries to interact with the ChessHub database
-    /// Supports both SQL Server (local) and PostgreSQL (Railway)
     /// </summary>
     public class DatabaseHelper
     {
         private readonly string _connectionString;
-        private readonly bool _usePostgres;
 
-        public DatabaseHelper(string connectionString, bool usePostgres = false)
+        public DatabaseHelper(string connectionString)
         {
             _connectionString = connectionString;
-            _usePostgres = usePostgres;
         }
 
-        private DbConnection GetConnection()
+        private SqlConnection GetConnection()
         {
-            if (_usePostgres)
-                return new NpgsqlConnection(_connectionString);
             return new SqlConnection(_connectionString);
-        }
-
-        private DbCommand CreateCommand(string sql, DbConnection connection)
-        {
-            if (_usePostgres)
-                return new NpgsqlCommand(sql, (NpgsqlConnection)connection);
-            return new SqlCommand(sql, (SqlConnection)connection);
-        }
-
-        private DbParameter CreateParameter(string name, object? value)
-        {
-            if (_usePostgres)
-                return new NpgsqlParameter(name, value ?? DBNull.Value);
-            return new SqlParameter(name, value ?? DBNull.Value);
-        }
-
-        private string Q(string identifier)
-        {
-            // Quote identifiers for PostgreSQL, leave as-is for SQL Server
-            return _usePostgres ? $"\"{identifier}\"" : identifier;
-        }
-
-        private string SchemaTable(string schema, string table)
-        {
-            return _usePostgres ? $"\"{schema}\".\"{table}\"" : $"{schema}.{table}";
         }
 
         public async Task<int> CreateUserAsync(User user)
@@ -60,21 +28,18 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var sql = _usePostgres
-                    ? @"INSERT INTO ""UsersSchema"".""UsersTable"" (""Username"", ""Email"", ""PasswordHash"", ""CreatedAt"", ""IsActive"")
-                       VALUES (@Username, @Email, @PasswordHash, @CreatedAt, @IsActive)
-                       RETURNING ""UserID"";"
-                    : @"INSERT INTO UsersSchema.UsersTable (Username, Email, PasswordHash, CreatedAt, IsActive)
-                       VALUES (@Username, @Email, @PasswordHash, @CreatedAt, @IsActive);
-                       SELECT SCOPE_IDENTITY();";
+                var sql = @"
+                    INSERT INTO UsersSchema.UsersTable (Username, Email, PasswordHash, CreatedAt, IsActive)
+                    VALUES (@Username, @Email, @PasswordHash, @CreatedAt, @IsActive);
+                    SELECT SCOPE_IDENTITY();";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@Username", user.Username));
-                    command.Parameters.Add(CreateParameter("@Email", user.Email));
-                    command.Parameters.Add(CreateParameter("@PasswordHash", user.PasswordHash));
-                    command.Parameters.Add(CreateParameter("@CreatedAt", user.CreatedAt));
-                    command.Parameters.Add(CreateParameter("@IsActive", user.IsActive));
+                    command.Parameters.AddWithValue("@Username", user.Username);
+                    command.Parameters.AddWithValue("@Email", user.Email);
+                    command.Parameters.AddWithValue("@PasswordHash", user.PasswordHash);
+                    command.Parameters.AddWithValue("@CreatedAt", user.CreatedAt);
+                    command.Parameters.AddWithValue("@IsActive", user.IsActive);
 
                     var result = await command.ExecuteScalarAsync();
                     return Convert.ToInt32(result);
@@ -88,15 +53,14 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var usersTable = SchemaTable("UsersSchema", "UsersTable");
-                var sql = $@"
-                    SELECT {Q("UserID")}, {Q("Username")}, {Q("Email")}, {Q("PasswordHash")}, {Q("CreatedAt")}, {Q("LastSeenAt")}, {Q("IsActive")}
-                    FROM {usersTable}
-                    WHERE {Q("UserID")} = @UserID";
+                var sql = @"
+                    SELECT UserID, Username, Email, PasswordHash, CreatedAt, LastSeenAt, IsActive
+                    FROM UsersSchema.UsersTable
+                    WHERE UserID = @UserID";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@UserID", userId));
+                    command.Parameters.AddWithValue("@UserID", userId);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -125,15 +89,14 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var usersTable = SchemaTable("UsersSchema", "UsersTable");
-                var sql = $@"
-                    SELECT {Q("UserID")}, {Q("Username")}, {Q("Email")}, {Q("PasswordHash")}, {Q("CreatedAt")}, {Q("LastSeenAt")}, {Q("IsActive")}
-                    FROM {usersTable}
-                    WHERE {Q("Username")} = @Username";
+                var sql = @"
+                    SELECT UserID, Username, Email, PasswordHash, CreatedAt, LastSeenAt, IsActive
+                    FROM UsersSchema.UsersTable
+                    WHERE Username = @Username";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@Username", username));
+                    command.Parameters.AddWithValue("@Username", username);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -164,17 +127,16 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var matchesTable = SchemaTable("MatchesSchema", "MatchesTable");
-                var sql = $@"
-                    SELECT {Q("MatchID")}, {Q("CreatedAt")}, {Q("EndedAt")}, {Q("WhiteUserID")}, {Q("BlackUserID")}, {Q("WinnerID")}, 
-                           {Q("MatchState")}, {Q("Result")}, {Q("EndReason")}, {Q("MatchType")}, {Q("InviteCode")}
-                    FROM {matchesTable}
-                    WHERE {Q("WhiteUserID")} = @UserID OR {Q("BlackUserID")} = @UserID
-                    ORDER BY {Q("CreatedAt")} DESC";
+                var sql = @"
+                    SELECT MatchID, CreatedAt, EndedAt, WhiteUserID, BlackUserID, WinnerID, 
+                           MatchState, Result, EndReason, MatchType, InviteCode
+                    FROM MatchesSchema.MatchesTable
+                    WHERE WhiteUserID = @UserID OR BlackUserID = @UserID
+                    ORDER BY CreatedAt DESC";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@UserID", userId));
+                    command.Parameters.AddWithValue("@UserID", userId);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -208,15 +170,14 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var statsTable = SchemaTable("StatsSchema", "UserStatsTable");
-                var sql = $@"
-                    SELECT {Q("UserID")}, {Q("Wins")}, {Q("Losses")}, {Q("Draws")}, {Q("CurrentWinStreak")}, {Q("BestWinStreak")}, {Q("Rating")}, {Q("LastGameEndedAt")}
-                    FROM {statsTable}
-                    WHERE {Q("UserID")} = @UserID";
+                var sql = @"
+                    SELECT UserID, Wins, Losses, Draws, CurrentWinStreak, BestWinStreak, Rating, LastGameEndedAt
+                    FROM StatsSchema.UserStatsTable
+                    WHERE UserID = @UserID";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@UserID", userId));
+                    command.Parameters.AddWithValue("@UserID", userId);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -246,18 +207,17 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var usersTable = SchemaTable("UsersSchema", "UsersTable");
-                var sql = $@"
-                    UPDATE {usersTable} 
-                    SET {Q("Username")} = @Username, {Q("Email")} = @Email, {Q("LastSeenAt")} = @LastSeenAt
-                    WHERE {Q("UserID")} = @UserID";
+                var sql = @"
+                    UPDATE UsersSchema.UsersTable 
+                    SET Username = @Username, Email = @Email, LastSeenAt = @LastSeenAt
+                    WHERE UserID = @UserID";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@UserID", user.UserID));
-                    command.Parameters.Add(CreateParameter("@Username", user.Username));
-                    command.Parameters.Add(CreateParameter("@Email", user.Email));
-                    command.Parameters.Add(CreateParameter("@LastSeenAt", user.LastSeenAt));
+                    command.Parameters.AddWithValue("@UserID", user.UserID);
+                    command.Parameters.AddWithValue("@Username", user.Username);
+                    command.Parameters.AddWithValue("@Email", user.Email);
+                    command.Parameters.AddWithValue("@LastSeenAt", user.LastSeenAt);
 
                     await command.ExecuteNonQueryAsync();
                 }
@@ -270,25 +230,20 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var matchesTable = SchemaTable("MatchesSchema", "MatchesTable");
-                var sql = _usePostgres
-                    ? $@"INSERT INTO {matchesTable} 
-                        ({Q("CreatedAt")}, {Q("WhiteUserID")}, {Q("BlackUserID")}, {Q("MatchState")}, {Q("MatchType")}, {Q("InviteCode")})
-                        VALUES (@CreatedAt, @WhiteUserID, @BlackUserID, @MatchState, @MatchType, @InviteCode)
-                        RETURNING {Q("MatchID")};"
-                    : $@"INSERT INTO {matchesTable} 
-                        ({Q("CreatedAt")}, {Q("WhiteUserID")}, {Q("BlackUserID")}, {Q("MatchState")}, {Q("MatchType")}, {Q("InviteCode")})
-                        VALUES (@CreatedAt, @WhiteUserID, @BlackUserID, @MatchState, @MatchType, @InviteCode);
-                        SELECT SCOPE_IDENTITY();";
+                var sql = @"
+                    INSERT INTO MatchesSchema.MatchesTable 
+                    (CreatedAt, WhiteUserID, BlackUserID, MatchState, MatchType, InviteCode)
+                    VALUES (@CreatedAt, @WhiteUserID, @BlackUserID, @MatchState, @MatchType, @InviteCode);
+                    SELECT SCOPE_IDENTITY();";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@CreatedAt", match.CreatedAt));
-                    command.Parameters.Add(CreateParameter("@WhiteUserID", match.WhiteUserID));
-                    command.Parameters.Add(CreateParameter("@BlackUserID", match.BlackUserID));
-                    command.Parameters.Add(CreateParameter("@MatchState", match.MatchState));
-                    command.Parameters.Add(CreateParameter("@MatchType", match.MatchType));
-                    command.Parameters.Add(CreateParameter("@InviteCode", (object?)match.InviteCode ?? DBNull.Value));
+                    command.Parameters.AddWithValue("@CreatedAt", match.CreatedAt);
+                    command.Parameters.AddWithValue("@WhiteUserID", match.WhiteUserID);
+                    command.Parameters.AddWithValue("@BlackUserID", match.BlackUserID);
+                    command.Parameters.AddWithValue("@MatchState", match.MatchState);
+                    command.Parameters.AddWithValue("@MatchType", match.MatchType);
+                    command.Parameters.AddWithValue("@InviteCode", (object?)match.InviteCode ?? DBNull.Value);
 
                     var result = await command.ExecuteScalarAsync();
                     return Convert.ToInt32(result);
@@ -302,16 +257,15 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var matchesTable = SchemaTable("MatchesSchema", "MatchesTable");
-                var sql = $@"
-                    SELECT {Q("MatchID")}, {Q("CreatedAt")}, {Q("EndedAt")}, {Q("WhiteUserID")}, {Q("BlackUserID")}, {Q("WinnerID")}, 
-                           {Q("MatchState")}, {Q("Result")}, {Q("EndReason")}, {Q("MatchType")}, {Q("InviteCode")}
-                    FROM {matchesTable}
-                    WHERE {Q("MatchID")} = @MatchID";
+                var sql = @"
+                    SELECT MatchID, CreatedAt, EndedAt, WhiteUserID, BlackUserID, WinnerID, 
+                           MatchState, Result, EndReason, MatchType, InviteCode
+                    FROM MatchesSchema.MatchesTable
+                    WHERE MatchID = @MatchID";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@MatchID", matchId));
+                    command.Parameters.AddWithValue("@MatchID", matchId);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -344,22 +298,21 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var statsTable = SchemaTable("StatsSchema", "UserStatsTable");
-                var sql = $@"
-                    INSERT INTO {statsTable} 
-                    ({Q("UserID")}, {Q("Wins")}, {Q("Losses")}, {Q("Draws")}, {Q("CurrentWinStreak")}, {Q("BestWinStreak")}, {Q("Rating")}, {Q("LastGameEndedAt")})
+                var sql = @"
+                    INSERT INTO StatsSchema.UserStatsTable 
+                    (UserID, Wins, Losses, Draws, CurrentWinStreak, BestWinStreak, Rating, LastGameEndedAt)
                     VALUES (@UserID, @Wins, @Losses, @Draws, @CurrentWinStreak, @BestWinStreak, @Rating, @LastGameEndedAt)";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@UserID", stats.UserID));
-                    command.Parameters.Add(CreateParameter("@Wins", stats.Wins));
-                    command.Parameters.Add(CreateParameter("@Losses", stats.Losses));
-                    command.Parameters.Add(CreateParameter("@Draws", stats.Draws));
-                    command.Parameters.Add(CreateParameter("@CurrentWinStreak", stats.CurrentWinStreak));
-                    command.Parameters.Add(CreateParameter("@BestWinStreak", stats.BestWinStreak));
-                    command.Parameters.Add(CreateParameter("@Rating", stats.Rating));
-                    command.Parameters.Add(CreateParameter("@LastGameEndedAt", (object?)stats.LastGameEndedAt ?? DBNull.Value));
+                    command.Parameters.AddWithValue("@UserID", stats.UserID);
+                    command.Parameters.AddWithValue("@Wins", stats.Wins);
+                    command.Parameters.AddWithValue("@Losses", stats.Losses);
+                    command.Parameters.AddWithValue("@Draws", stats.Draws);
+                    command.Parameters.AddWithValue("@CurrentWinStreak", stats.CurrentWinStreak);
+                    command.Parameters.AddWithValue("@BestWinStreak", stats.BestWinStreak);
+                    command.Parameters.AddWithValue("@Rating", stats.Rating);
+                    command.Parameters.AddWithValue("@LastGameEndedAt", (object?)stats.LastGameEndedAt ?? DBNull.Value);
 
                     await command.ExecuteNonQueryAsync();
                 }
@@ -372,24 +325,23 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var statsTable = SchemaTable("StatsSchema", "UserStatsTable");
-                var sql = $@"
-                    UPDATE {statsTable} 
-                    SET {Q("Wins")} = @Wins, {Q("Losses")} = @Losses, {Q("Draws")} = @Draws, 
-                        {Q("CurrentWinStreak")} = @CurrentWinStreak, {Q("BestWinStreak")} = @BestWinStreak, 
-                        {Q("Rating")} = @Rating, {Q("LastGameEndedAt")} = @LastGameEndedAt
-                    WHERE {Q("UserID")} = @UserID";
+                var sql = @"
+                    UPDATE StatsSchema.UserStatsTable 
+                    SET Wins = @Wins, Losses = @Losses, Draws = @Draws, 
+                        CurrentWinStreak = @CurrentWinStreak, BestWinStreak = @BestWinStreak, 
+                        Rating = @Rating, LastGameEndedAt = @LastGameEndedAt
+                    WHERE UserID = @UserID";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@UserID", stats.UserID));
-                    command.Parameters.Add(CreateParameter("@Wins", stats.Wins));
-                    command.Parameters.Add(CreateParameter("@Losses", stats.Losses));
-                    command.Parameters.Add(CreateParameter("@Draws", stats.Draws));
-                    command.Parameters.Add(CreateParameter("@CurrentWinStreak", stats.CurrentWinStreak));
-                    command.Parameters.Add(CreateParameter("@BestWinStreak", stats.BestWinStreak));
-                    command.Parameters.Add(CreateParameter("@Rating", stats.Rating));
-                    command.Parameters.Add(CreateParameter("@LastGameEndedAt", (object?)stats.LastGameEndedAt ?? DBNull.Value));
+                    command.Parameters.AddWithValue("@UserID", stats.UserID);
+                    command.Parameters.AddWithValue("@Wins", stats.Wins);
+                    command.Parameters.AddWithValue("@Losses", stats.Losses);
+                    command.Parameters.AddWithValue("@Draws", stats.Draws);
+                    command.Parameters.AddWithValue("@CurrentWinStreak", stats.CurrentWinStreak);
+                    command.Parameters.AddWithValue("@BestWinStreak", stats.BestWinStreak);
+                    command.Parameters.AddWithValue("@Rating", stats.Rating);
+                    command.Parameters.AddWithValue("@LastGameEndedAt", (object?)stats.LastGameEndedAt ?? DBNull.Value);
 
                     await command.ExecuteNonQueryAsync();
                 }
@@ -404,26 +356,17 @@ namespace WebApplication.DataManagement
             {
                 await connection.OpenAsync();
                 
-                var statsTable = SchemaTable("StatsSchema", "UserStatsTable");
-                var usersTable = SchemaTable("UsersSchema", "UsersTable");
-                var sql = _usePostgres
-                    ? $@"SELECT us.{Q("UserID")}, us.{Q("Wins")}, us.{Q("Losses")}, us.{Q("Draws")}, 
-                           us.{Q("CurrentWinStreak")}, us.{Q("BestWinStreak")}, us.{Q("Rating")}, us.{Q("LastGameEndedAt")},
-                           u.{Q("Username")}
-                    FROM {statsTable} us
-                    INNER JOIN {usersTable} u ON us.{Q("UserID")} = u.{Q("UserID")}
-                    ORDER BY us.{Q("Rating")} DESC
-                    LIMIT @TopCount"
-                    : $@"SELECT TOP (@TopCount) us.{Q("UserID")}, us.{Q("Wins")}, us.{Q("Losses")}, us.{Q("Draws")}, 
-                           us.{Q("CurrentWinStreak")}, us.{Q("BestWinStreak")}, us.{Q("Rating")}, us.{Q("LastGameEndedAt")},
-                           u.{Q("Username")}
-                    FROM {statsTable} us
-                    INNER JOIN {usersTable} u ON us.{Q("UserID")} = u.{Q("UserID")}
-                    ORDER BY us.{Q("Rating")} DESC";
+                var sql = @"
+                    SELECT TOP (@TopCount) us.UserID, us.Wins, us.Losses, us.Draws, 
+                           us.CurrentWinStreak, us.BestWinStreak, us.Rating, us.LastGameEndedAt,
+                           u.Username
+                    FROM StatsSchema.UserStatsTable us
+                    INNER JOIN UsersSchema.UsersTable u ON us.UserID = u.UserID
+                    ORDER BY us.Rating DESC";
 
-                using (var command = CreateCommand(sql, connection))
+                using (var command = new SqlCommand(sql, connection))
                 {
-                    command.Parameters.Add(CreateParameter("@TopCount", topCount));
+                    command.Parameters.AddWithValue("@TopCount", topCount);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
