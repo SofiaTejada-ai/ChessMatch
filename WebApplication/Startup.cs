@@ -85,6 +85,23 @@ namespace WebApplication
                     context.Response.ContentType = "application/json";
                     await context.Response.WriteAsync("{\"status\":\"ok\",\"service\":\"ChessHub API\"}");
                 });
+
+                // DB diagnostic endpoint — remove after debugging
+                endpoints.MapGet("/health/db", async context =>
+                {
+                    context.Response.ContentType = "application/json";
+                    try
+                    {
+                        var db = app.Services.GetRequiredService<DatabaseHelper>();
+                        var user = await db.GetUserByIdAsync(1);
+                        await context.Response.WriteAsync($"{{\"db\":\"connected\",\"user\":\"{user?.Username ?? "none"}\"}}");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        context.Response.StatusCode = 500;
+                        await context.Response.WriteAsync($"{{\"db\":\"error\",\"message\":\"{ex.Message.Replace("\"", "'")}\",\"type\":\"{ex.GetType().Name}\"}}");
+                    }
+                });
             });
         }
     }
