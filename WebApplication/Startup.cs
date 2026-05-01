@@ -118,7 +118,9 @@ namespace WebApplication
                         context.Response.StatusCode = 500;
                         context.Response.ContentType = "application/json";
                         context.Response.Headers["Access-Control-Allow-Origin"] = "*";
-                        await context.Response.WriteAsync($"{{\"error\":\"Internal server error\",\"type\":\"{ex.GetType().Name}\"}}");
+                        var msg = ex.Message.Length > 400 ? ex.Message.Substring(0, 400) : ex.Message;
+                        msg = msg.Replace("\"", "'").Replace("\n", " ").Replace("\r", "");
+                        await context.Response.WriteAsync($"{{\"error\":\"Internal server error\",\"type\":\"{ex.GetType().Name}\",\"message\":\"{msg}\"}}");
                     }
                 }
             });
