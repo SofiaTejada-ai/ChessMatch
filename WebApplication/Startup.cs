@@ -80,7 +80,8 @@ namespace WebApplication
             var host = hostParts[0];
             var port = hostParts.Length > 1 ? hostParts[1] : "5432";
 
-            return $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true";
+            // Supabase pooler requires: no prepared statements, small pool, short idle lifetime
+            return $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=5;Connection Idle Lifetime=30;Max Auto Prepare=0;No Reset On Close=true;Include Error Detail=true";
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
