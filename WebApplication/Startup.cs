@@ -25,9 +25,9 @@ namespace WebApplication
             });
             
             // Add DatabaseHelper with connection string
-            // Use DATABASE_URL env var on Railway, fall back to LocalDB for local dev
+            // Use DATABASE_URL env var on Railway/Supabase, fall back to local PostgreSQL for dev
             var connectionString = System.Environment.GetEnvironmentVariable("DATABASE_URL") 
-                ?? "Server=(localdb)\\ProjectModels;Database=ChessHub;Trusted_Connection=true;";
+                ?? "Host=localhost;Database=ChessHub;Username=postgres;Password=postgres";
             services.AddSingleton(new DatabaseHelper(connectionString));
             
             // Add JWT Authentication

@@ -1,12 +1,12 @@
 using System.Data;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using WebApplication.DataManagement.Models;
 
 namespace WebApplication.DataManagement
 {
     /// <summary>
     /// Raw SQL database helper class that replaces Entity Framework
-    /// Uses direct SQL queries to interact with the ChessHub database
+    /// Uses direct SQL queries to interact with the ChessHub PostgreSQL database (Supabase)
     /// </summary>
     public class DatabaseHelper
     {
@@ -17,9 +17,9 @@ namespace WebApplication.DataManagement
             _connectionString = connectionString;
         }
 
-        private SqlConnection GetConnection()
+        private NpgsqlConnection GetConnection()
         {
-            return new SqlConnection(_connectionString);
+            return new NpgsqlConnection(_connectionString);
         }
 
         public async Task<int> CreateUserAsync(User user)
@@ -29,11 +29,11 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    INSERT INTO UsersSchema.UsersTable (Username, Email, PasswordHash, CreatedAt, IsActive)
-                    VALUES (@Username, @Email, @PasswordHash, @CreatedAt, @IsActive);
-                    SELECT SCOPE_IDENTITY();";
+                    INSERT INTO users (username, email, password_hash, created_at, is_active)
+                    VALUES (@Username, @Email, @PasswordHash, @CreatedAt, @IsActive)
+                    RETURNING user_id";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@Username", user.Username);
                     command.Parameters.AddWithValue("@Email", user.Email);
@@ -54,11 +54,11 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    SELECT UserID, Username, Email, PasswordHash, CreatedAt, LastSeenAt, IsActive
-                    FROM UsersSchema.UsersTable
-                    WHERE UserID = @UserID";
+                    SELECT user_id, username, email, password_hash, created_at, last_seen_at, is_active
+                    FROM users
+                    WHERE user_id = @UserID";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@UserID", userId);
 
@@ -90,11 +90,11 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    SELECT UserID, Username, Email, PasswordHash, CreatedAt, LastSeenAt, IsActive
-                    FROM UsersSchema.UsersTable
-                    WHERE Username = @Username";
+                    SELECT user_id, username, email, password_hash, created_at, last_seen_at, is_active
+                    FROM users
+                    WHERE username = @Username";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@Username", username);
 
@@ -128,13 +128,13 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    SELECT MatchID, CreatedAt, EndedAt, WhiteUserID, BlackUserID, WinnerID, 
-                           MatchState, Result, EndReason, MatchType, InviteCode
-                    FROM MatchesSchema.MatchesTable
-                    WHERE WhiteUserID = @UserID OR BlackUserID = @UserID
-                    ORDER BY CreatedAt DESC";
+                    SELECT match_id, created_at, ended_at, white_user_id, black_user_id, winner_id, 
+                           match_state, result, end_reason, match_type, invite_code
+                    FROM matches
+                    WHERE white_user_id = @UserID OR black_user_id = @UserID
+                    ORDER BY created_at DESC";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@UserID", userId);
 
@@ -171,11 +171,11 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    SELECT UserID, Wins, Losses, Draws, CurrentWinStreak, BestWinStreak, Rating, LastGameEndedAt
-                    FROM StatsSchema.UserStatsTable
-                    WHERE UserID = @UserID";
+                    SELECT user_id, wins, losses, draws, current_win_streak, best_win_streak, rating, last_game_ended_at
+                    FROM user_stats
+                    WHERE user_id = @UserID";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@UserID", userId);
 
@@ -208,16 +208,16 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    UPDATE UsersSchema.UsersTable 
-                    SET Username = @Username, Email = @Email, LastSeenAt = @LastSeenAt
-                    WHERE UserID = @UserID";
+                    UPDATE users 
+                    SET username = @Username, email = @Email, last_seen_at = @LastSeenAt
+                    WHERE user_id = @UserID";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@UserID", user.UserID);
                     command.Parameters.AddWithValue("@Username", user.Username);
                     command.Parameters.AddWithValue("@Email", user.Email);
-                    command.Parameters.AddWithValue("@LastSeenAt", user.LastSeenAt);
+                    command.Parameters.AddWithValue("@LastSeenAt", (object?)user.LastSeenAt ?? DBNull.Value);
 
                     await command.ExecuteNonQueryAsync();
                 }
@@ -231,12 +231,12 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    INSERT INTO MatchesSchema.MatchesTable 
-                    (CreatedAt, WhiteUserID, BlackUserID, MatchState, MatchType, InviteCode)
-                    VALUES (@CreatedAt, @WhiteUserID, @BlackUserID, @MatchState, @MatchType, @InviteCode);
-                    SELECT SCOPE_IDENTITY();";
+                    INSERT INTO matches 
+                    (created_at, white_user_id, black_user_id, match_state, match_type, invite_code)
+                    VALUES (@CreatedAt, @WhiteUserID, @BlackUserID, @MatchState, @MatchType, @InviteCode)
+                    RETURNING match_id";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@CreatedAt", match.CreatedAt);
                     command.Parameters.AddWithValue("@WhiteUserID", match.WhiteUserID);
@@ -258,12 +258,12 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    SELECT MatchID, CreatedAt, EndedAt, WhiteUserID, BlackUserID, WinnerID, 
-                           MatchState, Result, EndReason, MatchType, InviteCode
-                    FROM MatchesSchema.MatchesTable
-                    WHERE MatchID = @MatchID";
+                    SELECT match_id, created_at, ended_at, white_user_id, black_user_id, winner_id, 
+                           match_state, result, end_reason, match_type, invite_code
+                    FROM matches
+                    WHERE match_id = @MatchID";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@MatchID", matchId);
 
@@ -299,11 +299,11 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    INSERT INTO StatsSchema.UserStatsTable 
-                    (UserID, Wins, Losses, Draws, CurrentWinStreak, BestWinStreak, Rating, LastGameEndedAt)
+                    INSERT INTO user_stats 
+                    (user_id, wins, losses, draws, current_win_streak, best_win_streak, rating, last_game_ended_at)
                     VALUES (@UserID, @Wins, @Losses, @Draws, @CurrentWinStreak, @BestWinStreak, @Rating, @LastGameEndedAt)";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@UserID", stats.UserID);
                     command.Parameters.AddWithValue("@Wins", stats.Wins);
@@ -326,13 +326,13 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    UPDATE StatsSchema.UserStatsTable 
-                    SET Wins = @Wins, Losses = @Losses, Draws = @Draws, 
-                        CurrentWinStreak = @CurrentWinStreak, BestWinStreak = @BestWinStreak, 
-                        Rating = @Rating, LastGameEndedAt = @LastGameEndedAt
-                    WHERE UserID = @UserID";
+                    UPDATE user_stats 
+                    SET wins = @Wins, losses = @Losses, draws = @Draws, 
+                        current_win_streak = @CurrentWinStreak, best_win_streak = @BestWinStreak, 
+                        rating = @Rating, last_game_ended_at = @LastGameEndedAt
+                    WHERE user_id = @UserID";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@UserID", stats.UserID);
                     command.Parameters.AddWithValue("@Wins", stats.Wins);
@@ -357,14 +357,15 @@ namespace WebApplication.DataManagement
                 await connection.OpenAsync();
                 
                 var sql = @"
-                    SELECT TOP (@TopCount) us.UserID, us.Wins, us.Losses, us.Draws, 
-                           us.CurrentWinStreak, us.BestWinStreak, us.Rating, us.LastGameEndedAt,
-                           u.Username
-                    FROM StatsSchema.UserStatsTable us
-                    INNER JOIN UsersSchema.UsersTable u ON us.UserID = u.UserID
-                    ORDER BY us.Rating DESC";
+                    SELECT us.user_id, us.wins, us.losses, us.draws, 
+                           us.current_win_streak, us.best_win_streak, us.rating, us.last_game_ended_at,
+                           u.username
+                    FROM user_stats us
+                    INNER JOIN users u ON us.user_id = u.user_id
+                    ORDER BY us.rating DESC
+                    LIMIT @TopCount";
 
-                using (var command = new SqlCommand(sql, connection))
+                using (var command = new NpgsqlCommand(sql, connection))
                 {
                     command.Parameters.AddWithValue("@TopCount", topCount);
 
