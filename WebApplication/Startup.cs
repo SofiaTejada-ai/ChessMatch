@@ -28,6 +28,15 @@ namespace WebApplication
             // Use DATABASE_URL env var on Railway/Supabase, fall back to local PostgreSQL for dev
             var connectionString = System.Environment.GetEnvironmentVariable("DATABASE_URL") 
                 ?? "Host=localhost;Database=ChessHub;Username=postgres;Password=postgres";
+            
+            // Supabase requires SSL — ensure it's set
+            if (!connectionString.Contains("SSL Mode") && !connectionString.Contains("sslmode"))
+            {
+                var separator = connectionString.Contains("?") ? "&" : 
+                                connectionString.StartsWith("postgresql://") ? "?sslmode=require" : ";SSL Mode=Require;Trust Server Certificate=true";
+                connectionString += separator;
+            }
+            
             services.AddSingleton(new DatabaseHelper(connectionString));
             
             // Add JWT Authentication
