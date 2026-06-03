@@ -639,7 +639,7 @@ namespace WebApplication
                 try
                 {
                     using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-                    var url  = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+                    var url  = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={apiKey}";
                     var body = System.Text.Json.JsonSerializer.Serialize(new
                     {
                         contents = new[] { new { parts = new[] { new { text = prompt } } } }
